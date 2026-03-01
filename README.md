@@ -1,9 +1,9 @@
 # diarize
 
-[![PyPI version](https://img.shields.io/pypi/v/diarize)](https://pypi.org/project/diarize/)
-[![Python versions](https://img.shields.io/pypi/pyversions/diarize)](https://pypi.org/project/diarize/)
-[![License](https://img.shields.io/pypi/l/diarize)](LICENSE)
-[![codecov](https://codecov.io/gh/FoxNoseTech/diarize/graph/badge.svg)](https://codecov.io/gh/FoxNoseTech/diarize)
+[![PyPI version](https://img.shields.io/pypi/v/diarize?v=1)](https://pypi.org/project/diarize/)
+[![Python versions](https://img.shields.io/pypi/pyversions/diarize?v=1)](https://pypi.org/project/diarize/)
+[![License](https://img.shields.io/pypi/l/diarize?v=1)](LICENSE)
+[![codecov](https://codecov.io/gh/FoxNoseTech/diarize/graph/badge.svg?v=1)](https://codecov.io/gh/FoxNoseTech/diarize)
 [![CI](https://github.com/FoxNoseTech/diarize/actions/workflows/ci.yml/badge.svg)](https://github.com/FoxNoseTech/diarize/actions/workflows/ci.yml)
 [![Docs](https://img.shields.io/badge/docs-foxnosetech.github.io-blue)](https://foxnosetech.github.io/diarize/)
 
