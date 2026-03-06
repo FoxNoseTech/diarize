@@ -58,6 +58,7 @@ result.to_rttm("meeting.rttm")
 ```
 
 Requires Python 3.9+. Supports WAV, MP3, FLAC, OGG, and other formats via soundfile/libsndfile.
+`diarize` pins a compatible `torch/torchaudio` range during install, so no extra manual pinning is required.
 
 📖 **[Full documentation](https://foxnosetech.github.io/diarize/)** — installation, API reference, architecture, benchmarks.
 

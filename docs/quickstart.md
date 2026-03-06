@@ -7,7 +7,8 @@ pip install diarize
 ```
 
 Requires Python 3.9+. All models (Silero VAD, WeSpeaker) are downloaded
-automatically on first use.
+automatically on first use. `diarize` also installs a compatible
+`torch/torchaudio` range automatically.
 
 ## Basic Usage
 

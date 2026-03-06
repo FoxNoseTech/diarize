@@ -11,6 +11,7 @@ pip install diarize
 ```
 
 Requires Python 3.9+. All models download automatically on first use.
+`diarize` installs a compatible `torch/torchaudio` range automatically.
 
 ```python
 from diarize import diarize
