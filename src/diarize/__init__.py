@@ -54,6 +54,9 @@ __all__ = [
 
 logger = logging.getLogger(__name__)
 
+_TEMPORAL_SWITCH_PENALTY = 0.18
+_MAX_FRAGMENT_DURATION = 1.2
+
 
 def _majority_label(labels: list[int]) -> int | None:
     """Return the unique majority label, or ``None`` on ties."""
@@ -81,6 +84,159 @@ def _smooth_window_labels(labels: list[int]) -> list[int]:
     return smoothed
 
 
+def _normalize_rows(values: np.ndarray) -> np.ndarray:
+    """Return row-wise L2-normalised values, preserving zero rows."""
+    norms = np.linalg.norm(values, axis=1, keepdims=True)
+    return np.divide(
+        values,
+        norms,
+        out=np.zeros_like(values, dtype=float),
+        where=norms > 0,
+    )
+
+
+def _speaker_centroids(
+    embeddings: np.ndarray,
+    labels: np.ndarray,
+) -> tuple[list[int], np.ndarray]:
+    """Build L2-normalised speaker centroids from clustered embeddings."""
+    if len(embeddings) == 0 or len(embeddings) != len(labels):
+        return [], np.empty((0, 0), dtype=float)
+
+    norm_embeddings = _normalize_rows(np.asarray(embeddings, dtype=float))
+    label_values = sorted({int(label) for label in labels})
+    centroids: list[np.ndarray] = []
+    valid_labels: list[int] = []
+
+    for label in label_values:
+        members = norm_embeddings[labels == label]
+        if len(members) == 0:  # pragma: no cover - label_values are derived from labels.
+            continue
+        centroid = members.mean(axis=0, keepdims=True)
+        centroid = _normalize_rows(centroid)[0]
+        if not np.any(centroid):
+            continue
+        valid_labels.append(label)
+        centroids.append(centroid)
+
+    if not centroids:
+        return [], np.empty((0, norm_embeddings.shape[1]), dtype=float)
+
+    return valid_labels, np.vstack(centroids)
+
+
+def _viterbi_smooth_scores(
+    scores: np.ndarray,
+    *,
+    switch_penalty: float = _TEMPORAL_SWITCH_PENALTY,
+) -> list[int]:
+    """Find the best label path with a penalty for short speaker switches."""
+    n_frames, n_labels = scores.shape
+    if n_frames == 0:
+        return []
+    if n_labels <= 1:
+        return [0] * n_frames
+
+    dp = np.empty((n_frames, n_labels), dtype=float)
+    back = np.zeros((n_frames, n_labels), dtype=int)
+    dp[0] = scores[0]
+
+    transition = np.full((n_labels, n_labels), -switch_penalty, dtype=float)
+    np.fill_diagonal(transition, 0.0)
+
+    for frame_idx in range(1, n_frames):
+        previous = dp[frame_idx - 1][:, None] + transition
+        back[frame_idx] = np.argmax(previous, axis=0)
+        dp[frame_idx] = scores[frame_idx] + np.max(previous, axis=0)
+
+    path = [int(np.argmax(dp[-1]))]
+    for frame_idx in range(n_frames - 1, 0, -1):
+        path.append(int(back[frame_idx, path[-1]]))
+    path.reverse()
+    return path
+
+
+def _smooth_window_labels_temporal(
+    labels: list[int],
+    embeddings: np.ndarray,
+    indices: list[int],
+    label_values: list[int],
+    centroids: np.ndarray,
+) -> list[int]:
+    """Smooth a single VAD segment using centroid scores and Viterbi decoding."""
+    if len(labels) < 3 or len(label_values) <= 1:
+        return labels
+
+    label_to_idx = {label: idx for idx, label in enumerate(label_values)}
+    norm_embeddings = _normalize_rows(np.asarray(embeddings[indices], dtype=float))
+    scores = norm_embeddings @ centroids.T
+
+    # Small anchor to the original clustering label keeps confident labels
+    # stable while the transition penalty removes low-value label flicker.
+    for row_idx, label in enumerate(labels):
+        label_idx = label_to_idx.get(label)
+        if label_idx is not None:
+            scores[row_idx, label_idx] += 0.02
+
+    path = _viterbi_smooth_scores(scores)
+    return [label_values[state] for state in path]
+
+
+def _collapse_short_label_islands(
+    labels: list[int],
+    windows: list[tuple[float, float]],
+    *,
+    max_duration: float = _MAX_FRAGMENT_DURATION,
+) -> list[int]:
+    """Collapse short A-B-A label islands inside a continuous speech segment."""
+    if len(labels) < 3 or len(labels) != len(windows):
+        return labels
+
+    runs: list[tuple[int, int, int, float]] = []
+    run_start = 0
+    for idx in range(1, len(labels) + 1):
+        if idx == len(labels) or labels[idx] != labels[run_start]:
+            duration = windows[idx - 1][1] - windows[run_start][0]
+            runs.append((run_start, idx, labels[run_start], duration))
+            run_start = idx
+
+    if len(runs) < 3:
+        return labels
+
+    smoothed = labels.copy()
+    for run_idx in range(1, len(runs) - 1):
+        start, end, label, duration = runs[run_idx]
+        _, _, previous_label, _ = runs[run_idx - 1]
+        _, _, next_label, _ = runs[run_idx + 1]
+        if previous_label == next_label and label != previous_label and duration <= max_duration:
+            smoothed[start:end] = [previous_label] * (end - start)
+
+    return smoothed
+
+
+def _restore_sustained_label_runs(
+    original_labels: list[int],
+    smoothed_labels: list[int],
+    windows: list[tuple[float, float]],
+    *,
+    min_duration: float = _MAX_FRAGMENT_DURATION,
+) -> list[int]:
+    """Keep sustained original runs even when Viterbi prefers fewer switches."""
+    if len(original_labels) != len(smoothed_labels) or len(original_labels) != len(windows):
+        return smoothed_labels
+
+    restored = smoothed_labels.copy()
+    run_start = 0
+    for idx in range(1, len(original_labels) + 1):
+        if idx == len(original_labels) or original_labels[idx] != original_labels[run_start]:
+            duration = windows[idx - 1][1] - windows[run_start][0]
+            if duration > min_duration:
+                restored[run_start:idx] = original_labels[run_start:idx]
+            run_start = idx
+
+    return restored
+
+
 def _window_boundaries(
     speech_segment: SpeechSegment,
     segment_subsegments: list[SubSegment],
@@ -103,17 +259,19 @@ def _build_diarization_segments(
     speech_segments: list[SpeechSegment],
     subsegments: list[SubSegment],
     labels: np.ndarray,
+    embeddings: np.ndarray | None = None,
 ) -> list[Segment]:
     """Assemble diarization segments from subsegments and cluster labels.
 
     Overlapping embedding windows are converted to a non-overlapping
-    timeline and smoothed with a local majority filter. VAD segments
+    timeline and smoothed with temporal label decoding. VAD segments
     without embeddings are assigned the nearest speaker.
 
     Args:
         speech_segments: Original speech segments from VAD.
         subsegments: Embedding windows with parent indices.
         labels: Cluster labels aligned with *subsegments*.
+        embeddings: Optional speaker embeddings aligned with *subsegments*.
 
     Returns:
         Merged :class:`Segment` list sorted by start time.
@@ -123,15 +281,39 @@ def _build_diarization_segments(
     for idx, sub in enumerate(subsegments):
         subsegments_by_parent.setdefault(sub.parent_idx, []).append(idx)
 
+    label_values: list[int] = []
+    centroids = np.empty((0, 0), dtype=float)
+    if embeddings is not None:
+        label_values, centroids = _speaker_centroids(embeddings, labels)
+
     for parent_idx, speech_segment in enumerate(speech_segments):
         indices = subsegments_by_parent.get(parent_idx)
         if not indices:
             continue
 
         indices.sort(key=lambda idx: subsegments[idx].start)
-        parent_labels = _smooth_window_labels([int(labels[idx]) for idx in indices])
+        parent_labels = [int(labels[idx]) for idx in indices]
         parent_subsegments = [subsegments[idx] for idx in indices]
         windows = _window_boundaries(speech_segment, parent_subsegments)
+
+        if embeddings is not None and len(label_values) > 1:
+            original_labels = parent_labels
+            parent_labels = _smooth_window_labels_temporal(
+                parent_labels,
+                embeddings,
+                indices,
+                label_values,
+                centroids,
+            )
+            parent_labels = _restore_sustained_label_runs(
+                original_labels,
+                parent_labels,
+                windows,
+            )
+            parent_labels = _collapse_short_label_islands(parent_labels, windows)
+        else:
+            parent_labels = _smooth_window_labels(parent_labels)
+
         for (start, end), label in zip(windows, parent_labels):
             if end <= start:
                 continue
@@ -258,6 +440,7 @@ def diarize(
         speech_segments,
         subsegments,
         labels,
+        embeddings,
     )
 
     result = DiarizeResult(

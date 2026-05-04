@@ -23,7 +23,7 @@ for seg in result.segments:
     print(f"  [{seg.start:.1f}s - {seg.end:.1f}s] {seg.speaker}")
 ```
 
-**~5.2% weighted DER** on VoxConverse dev. Processes audio **~8x faster than real-time** on CPU. Automatically detects the number of speakers.
+**~5.0% weighted DER** on VoxConverse dev. Processes audio **~8x faster than real-time** on CPU. Automatically detects the number of speakers.
 
 > Benchmarked on a single dataset ([VoxConverse](https://github.com/joonson/voxconverse)). Cross-dataset validation is [in progress](#roadmap).
 
@@ -35,7 +35,7 @@ for seg in result.segments:
 | GPU required | No | No (7x slower on CPU) | No |
 | HuggingFace account | No | Yes | Yes |
 | Auto speaker count | Yes | Yes | Yes |
-| DER (VoxConverse dev) | **~5.2%** | ~11.2% | ~8.5% |
+| DER (VoxConverse dev) | **~5.0%** | ~11.2% | ~8.5% |
 | CPU speed (RTF) | **0.12** | 0.86 | — |
 | Install | `pip install diarize` | `pip install pyannote.audio` | `pip install pyannote.audio` |
 
@@ -89,7 +89,7 @@ Four-stage pipeline, all CPU, all open-source:
 1. **Silero VAD** (MIT) — detects speech segments
 2. **WeSpeaker ResNet34-LM** (Apache 2.0) — extracts 256-dim speaker embeddings via ONNX
 3. **GMM BIC + silhouette refinement** — estimates the number of speakers
-4. **Spectral Clustering** (scikit-learn, BSD) + smoothing — assigns speaker labels
+4. **Spectral Clustering** (scikit-learn, BSD) + temporal smoothing — assigns speaker labels
 
 Details: [How It Works](https://foxnosetech.github.io/diarize/how-it-works/)
 
@@ -102,7 +102,7 @@ Evaluated on [VoxConverse](https://github.com/joonson/voxconverse) dev set (216 
 | System | Weighted DER | Notes |
 |--------|----------|-------|
 | pyannote precision-2 | ~8.5% | Commercial license |
-| **diarize** | **~5.2%** | **Apache 2.0, CPU-only, no API key** |
+| **diarize** | **~5.0%** | **Apache 2.0, CPU-only, no API key** |
 | pyannote community-1 | ~11.2% | CC-BY-4.0, needs HF token |
 | pyannote 3.1 (legacy) | ~11.2% | MIT, needs HF token |
 
@@ -121,7 +121,7 @@ Full benchmark results, speed comparison, and methodology: [benchmarks](https://
 ## When to use something else
 
 - **You need commercial support or cross-dataset validation.** pyannote's commercial model has published production-oriented benchmarks beyond this single VoxConverse evaluation. If accuracy is the top priority and you have budget, compare on your own data.
-- **You need very stable speaker labels in transcripts.** diarize can still show speaker fragmentation / label switching: one real speaker may be split across multiple `SPEAKER_XX` labels, or the label may briefly jump inside a continuous turn, especially on noisy real-world audio.
+- **You need very stable speaker labels in transcripts.** Temporal smoothing reduces short label jumps, but diarize can still show speaker fragmentation / label switching: one real speaker may be split across multiple `SPEAKER_XX` labels, especially on noisy real-world audio.
 - **Your audio has 8+ speakers.** Automatic speaker count estimation degrades above 7 speakers. You can pass `num_speakers` explicitly, but test carefully.
 - **You need overlapping speech detection.** diarize assigns each segment to one speaker. Overlapping speech is not modeled.
 - **You need GPU-accelerated throughput.** diarize is CPU-only by design. For processing thousands of hours with GPU infrastructure, NeMo or pyannote on GPU will be faster.
