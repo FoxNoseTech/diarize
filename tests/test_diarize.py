@@ -532,18 +532,24 @@ class TestClusterSpeakers:
     def test_silhouette_candidates_skip_single_speaker(self):
         from diarize.clustering import _silhouette_candidate_counts
 
-        assert _silhouette_candidate_counts(
-            k=1,
-            n_embeddings=20,
-            min_speakers=1,
-            max_speakers=10,
-        ) == []
-        assert _silhouette_candidate_counts(
-            k=3,
-            n_embeddings=3,
-            min_speakers=1,
-            max_speakers=10,
-        ) == []
+        assert (
+            _silhouette_candidate_counts(
+                k=1,
+                n_embeddings=20,
+                min_speakers=1,
+                max_speakers=10,
+            )
+            == []
+        )
+        assert (
+            _silhouette_candidate_counts(
+                k=3,
+                n_embeddings=3,
+                min_speakers=1,
+                max_speakers=10,
+            )
+            == []
+        )
 
     def test_silhouette_candidates_respect_min_speakers(self):
         from diarize.clustering import _silhouette_candidate_counts
