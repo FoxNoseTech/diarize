@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Iterator
 
 import soundfile as sf
+
 from pydantic import BaseModel, Field, computed_field, model_validator
 
 logger = logging.getLogger(__name__)
@@ -21,6 +22,7 @@ __all__ = [
     "SubSegment",
     "SpeakerEstimationDetails",
     "DiarizeResult",
+    "DiarizeArtifacts",
     "get_audio_duration",
     "format_timestamp",
 ]
@@ -121,6 +123,26 @@ class SpeakerEstimationDetails(BaseModel):
     cosine_sim_p10: float | None = None
 
 
+class DiarizeArtifacts(BaseModel):
+    """Internal pipeline artifacts, available when ``return_artifacts=True``.
+
+    All fields use plain Python types for clean serialization.
+
+    Attributes:
+        embeddings: Speaker embedding vectors (one per subsegment).
+        subsegments: Embedding windows used during extraction.
+    """
+
+    embeddings: list[list[float]] = Field(
+        default_factory=list,
+        description="Speaker embedding vectors as nested lists",
+    )
+    subsegments: list[SubSegment] = Field(
+        default_factory=list,
+        description="Embedding windows used during extraction",
+    )
+
+
 class DiarizeResult(BaseModel):
     """Result of speaker diarization.
 
@@ -145,6 +167,7 @@ class DiarizeResult(BaseModel):
     audio_path: str = ""
     audio_duration: float = Field(default=0.0, ge=0)
     estimation_details: SpeakerEstimationDetails | None = None
+    artifacts: DiarizeArtifacts | None = None
 
     @computed_field  # type: ignore[prop-decorator]
     @property

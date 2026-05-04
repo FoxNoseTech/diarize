@@ -23,6 +23,7 @@ import numpy as np
 from .clustering import cluster_speakers, estimate_speakers  # noqa: F401
 from .embeddings import extract_embeddings
 from .utils import (
+    DiarizeArtifacts,
     DiarizeResult,
     Segment,
     SpeakerEstimationDetails,  # noqa: F401
@@ -45,6 +46,7 @@ __version__ = "0.1.0"
 __all__ = [
     "diarize",
     "DiarizeResult",
+    "DiarizeArtifacts",
     "Segment",
     "SpeakerEstimationDetails",
     "estimate_speakers",
@@ -129,6 +131,7 @@ def diarize(
     min_speakers: int = 1,
     max_speakers: int = 20,
     num_speakers: int | None = None,
+    return_artifacts: bool = False,
 ) -> DiarizeResult:
     """Run the full speaker diarization pipeline on an audio file.
 
@@ -146,6 +149,9 @@ def diarize(
         max_speakers: Maximum number of speakers for auto-detection.
         num_speakers: If set, skip auto-detection and use this exact
             number of speakers.
+        return_artifacts: If ``True``, populate
+            :attr:`DiarizeResult.artifacts` with speaker embeddings and
+            subsegments. Defaults to ``False``.
 
     Returns:
         :class:`DiarizeResult` containing segments, speaker info, and
@@ -202,6 +208,10 @@ def diarize(
         audio_path=audio_path_str,
         audio_duration=duration,
         estimation_details=estimation_details,
+        artifacts=DiarizeArtifacts(
+            embeddings=embeddings.tolist(),
+            subsegments=subsegments,
+        ) if return_artifacts else None,
     )
 
     logger.info(
