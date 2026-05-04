@@ -198,7 +198,7 @@ def _refine_labels_spherical(
         valid = np.zeros(k, dtype=bool)
         for label in range(k):
             members = emb[refined == label]
-            if len(members) == 0:
+            if len(members) == 0:  # pragma: no cover - defensive against future label changes.
                 continue
             centroid = members.mean(axis=0)
             norm = float(np.linalg.norm(centroid))

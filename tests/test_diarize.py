@@ -491,6 +491,42 @@ class TestClusterSpectral:
         assert labels[2] == labels[3]
         assert labels[0] != labels[2]
 
+    def test_spherical_refinement_handles_empty_and_single_label(self):
+        from diarize.clustering import _refine_labels_spherical
+
+        empty = _refine_labels_spherical(np.empty((0, 2)), np.array([], dtype=int))
+        assert len(empty) == 0
+
+        labels = _refine_labels_spherical(np.ones((3, 2)), np.array([5, 5, 5]))
+        assert labels.tolist() == [0, 0, 0]
+
+    def test_spherical_refinement_stops_on_degenerate_centroid(self):
+        from diarize.clustering import _refine_labels_spherical
+
+        embeddings = np.array([[0.0, 0.0], [1.0, 0.0], [-1.0, 0.0]])
+        labels = np.array([0, 1, 1])
+
+        refined = _refine_labels_spherical(embeddings, labels)
+        assert refined.tolist() == [0, 1, 1]
+
+    def test_spherical_refinement_stops_on_empty_cluster(self):
+        from diarize.clustering import _refine_labels_spherical
+
+        embeddings = np.array([[1.0, 0.0], [0.0, 1.0]])
+        labels = np.array([0, 2])
+
+        refined = _refine_labels_spherical(embeddings, labels)
+        assert refined.tolist() == [0, 1]
+
+    def test_spherical_refinement_preserves_nonempty_clusters(self):
+        from diarize.clustering import _refine_labels_spherical
+
+        embeddings = np.array([[1.0, 0.0], [0.9, 0.0], [0.8, 0.0]])
+        labels = np.array([0, 1, 1])
+
+        refined = _refine_labels_spherical(embeddings, labels)
+        assert refined.tolist() == [0, 1, 1]
+
     def test_basic_clustering(self):
         from diarize.clustering import cluster_spectral
 
@@ -561,6 +597,22 @@ class TestClusterSpeakers:
             max_speakers=10,
         ) == [4, 5, 6, 7, 8]
 
+    def test_auto_updates_details_when_silhouette_changes_k(self):
+        from diarize.clustering import cluster_auto
+        from diarize.utils import SpeakerEstimationDetails
+
+        rng = np.random.RandomState(42)
+        c1 = rng.randn(12, 8) * 0.01 + np.array([1.0, 0, 0, 0, 0, 0, 0, 0])
+        c2 = rng.randn(12, 8) * 0.01 + np.array([0, 1.0, 0, 0, 0, 0, 0, 0])
+        embeddings = np.vstack([c1, c2])
+        details = SpeakerEstimationDetails(method="gmm_bic", best_k=3)
+
+        with patch("diarize.clustering.estimate_speakers", return_value=(3, details)):
+            labels, details = cluster_auto(embeddings, min_speakers=2, max_speakers=5)
+
+        assert len(labels) == len(embeddings)
+        assert details.best_k == 2
+
     def test_fixed_num_speakers(self):
         from diarize.clustering import cluster_speakers
 
@@ -599,6 +651,39 @@ class TestClusterSpeakers:
 
 class TestBuildDiarizationSegments:
     """Tests for segment assembly from subsegments and labels."""
+
+    def test_majority_helpers_handle_empty_and_ties(self):
+        from diarize import _majority_label, _smooth_window_labels
+
+        assert _majority_label([]) is None
+        assert _majority_label([0, 1]) is None
+        assert _smooth_window_labels([0, 1]) == [0, 1]
+        assert _smooth_window_labels([0, 1, 1]) == [0, 1, 1]
+
+    def test_window_boundaries_empty_and_degenerate_windows(self):
+        from diarize import _build_diarization_segments, _window_boundaries
+        from diarize.utils import SpeechSegment, SubSegment
+
+        speech = SpeechSegment(start=1.0, end=2.0)
+        assert _window_boundaries(speech, []) == []
+
+        segments = _build_diarization_segments(
+            [speech],
+            [SubSegment(start=1.0, end=1.0, parent_idx=0)],
+            np.array([0]),
+        )
+        assert segments[0].start == pytest.approx(1.0)
+        assert segments[0].end == pytest.approx(2.0)
+
+        skipped = _build_diarization_segments(
+            [SpeechSegment(start=1.0, end=2.0)],
+            [
+                SubSegment(start=0.0, end=0.0, parent_idx=0),
+                SubSegment(start=1.5, end=1.5, parent_idx=0),
+            ],
+            np.array([0, 1]),
+        )
+        assert all(seg.end > seg.start for seg in skipped)
 
     def test_basic_assembly(self):
         from diarize import _build_diarization_segments
@@ -1033,6 +1118,16 @@ class TestDiarizePipeline:
 
         assert result.audio_path == "test.wav"
 
+    def test_invalid_arguments_rejected(self):
+        from diarize import diarize
+
+        with pytest.raises(ValueError, match="min_speakers"):
+            diarize("test.wav", min_speakers=0)
+        with pytest.raises(ValueError, match="max_speakers"):
+            diarize("test.wav", min_speakers=3, max_speakers=2)
+        with pytest.raises(ValueError, match="num_speakers"):
+            diarize("test.wav", num_speakers=0)
+
 
 # ── Public API imports ───────────────────────────────────────────────────────
 
@@ -1124,6 +1219,18 @@ class TestEdgeCases:
         labels = cluster_spectral(embeddings, k=1)
         assert len(labels) == 10
         assert set(labels) == {0}
+
+    def test_cluster_speakers_validation_errors(self):
+        """cluster_speakers should reject invalid speaker bounds."""
+        from diarize.clustering import cluster_speakers
+
+        embeddings = np.random.RandomState(42).randn(4, 256)
+        with pytest.raises(ValueError, match="min_speakers"):
+            cluster_speakers(embeddings, min_speakers=0)
+        with pytest.raises(ValueError, match="max_speakers"):
+            cluster_speakers(embeddings, min_speakers=3, max_speakers=2)
+        with pytest.raises(ValueError, match="num_speakers"):
+            cluster_speakers(embeddings, num_speakers=0)
 
     def test_extract_embeddings_empty_returns_2d(self):
         """P3: extract_embeddings should return (0, 256) shape when no embeddings."""
