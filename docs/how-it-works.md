@@ -15,10 +15,10 @@ Audio File
 [2] WeSpeaker ResNet34-LM -> 256-dim speaker embeddings
     |
     v
-[3] GMM BIC -------------> Estimated speaker count (k)
+[3] GMM BIC + silhouette -> Estimated speaker count (k)
     |
     v
-[4] Spectral Clustering --> Speaker labels
+[4] Spectral + smoothing -> Speaker timeline
     |
     v
 DiarizeResult
@@ -54,7 +54,7 @@ See: [`extract_embeddings()`](api.md#diarize.embeddings.extract_embeddings)
 ## Stage 3: Speaker Count Estimation
 
 Unless the user provides `num_speakers`, the pipeline estimates how many
-speakers are present in two steps:
+speakers are present in three steps:
 
 **Step 1 --- Cosine similarity pre-check.** Compute pairwise cosine
 similarities of the L2-normalised embeddings. If the 10th percentile
@@ -74,12 +74,19 @@ Criterion (BIC)**:
 The PCA=8 setting provides a good balance: stable estimation for 2--7
 speakers while keeping computational cost low.
 
+**Step 3 --- Silhouette refinement.** BIC is used as an anchor, then a
+small neighbourhood around it is scored with silhouette over cosine
+distance. The candidate range is clamped by `min_speakers`,
+`max_speakers`, and the number of available embeddings. This catches
+some BIC undercounts and overcounts without searching the full range.
+
 !!! warning
-    For **8 or more speakers** the estimator systematically undercounts.
+    For **8 or more speakers** the estimator can undercount.
     Pass ``num_speakers`` explicitly when the speaker count is known.
     See [Benchmarks --- Limitations](benchmarks.md#limitations).
 
 See: [`estimate_speakers()`](api.md#diarize.clustering.estimate_speakers)
+and [`cluster_auto()`](api.md#diarize.clustering.cluster_auto)
 
 ## Stage 4: Spectral Clustering
 
@@ -88,9 +95,16 @@ the embedding vectors using cosine similarity as the affinity metric.
 The cosine similarity matrix is rescaled to [0, 1] and passed to
 scikit-learn's `SpectralClustering`.
 
-Adjacent subsegments assigned to the same speaker are merged, and short
-segments that were skipped during embedding extraction are assigned the
-label of the nearest speaker.
+The initial spectral labels are refined with spherical centroid
+reassignment over L2-normalised embeddings. This preserves the selected
+speaker count while reducing unstable one-window label flips.
+
+For long VAD segments, overlapping embedding windows are decoded into
+non-overlapping timeline intervals using window-center midpoints. A
+3-window majority filter smooths local label noise. Adjacent intervals
+assigned to the same speaker are merged, and short segments that were
+skipped during embedding extraction are assigned the label of the nearest
+speaker.
 
 See: [`cluster_spectral()`](api.md#diarize.clustering.cluster_spectral)
 

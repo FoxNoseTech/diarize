@@ -23,7 +23,7 @@ for seg in result.segments:
     print(f"  [{seg.start:.1f}s - {seg.end:.1f}s] {seg.speaker}")
 ```
 
-**~10.8% DER** on VoxConverse (lower than pyannote's free models). Processes audio **~8x faster than real-time** on CPU. Automatically detects the number of speakers.
+**~5.2% weighted DER** on VoxConverse dev. Processes audio **~8x faster than real-time** on CPU. Automatically detects the number of speakers.
 
 > Benchmarked on a single dataset ([VoxConverse](https://github.com/joonson/voxconverse)). Cross-dataset validation is [in progress](#roadmap).
 
@@ -35,12 +35,12 @@ for seg in result.segments:
 | GPU required | No | No (7x slower on CPU) | No |
 | HuggingFace account | No | Yes | Yes |
 | Auto speaker count | Yes | Yes | Yes |
-| DER (VoxConverse) | **~10.8%** | ~11.2% | ~8.5% |
+| DER (VoxConverse dev) | **~5.2%** | ~11.2% | ~8.5% |
 | CPU speed (RTF) | **0.12** | 0.86 | — |
 | Install | `pip install diarize` | `pip install pyannote.audio` | `pip install pyannote.audio` |
 
 DER = Diarization Error Rate (lower is better). RTF = Real-Time Factor (lower is faster).
-pyannote numbers are self-reported from their [benchmark page](https://huggingface.co/pyannote/speaker-diarization-3.1). Full methodology: [benchmarks](https://foxnosetech.github.io/diarize/benchmarks/).
+pyannote numbers are self-reported from their [benchmark page](https://huggingface.co/pyannote/speaker-diarization-3.1). The diarize number is from the VoxConverse dev evaluation described in [benchmarks](https://foxnosetech.github.io/diarize/benchmarks/).
 
 ## Quick Start
 
@@ -88,8 +88,8 @@ Four-stage pipeline, all CPU, all open-source:
 
 1. **Silero VAD** (MIT) — detects speech segments
 2. **WeSpeaker ResNet34-LM** (Apache 2.0) — extracts 256-dim speaker embeddings via ONNX
-3. **GMM BIC** — estimates the number of speakers
-4. **Spectral Clustering** (scikit-learn, BSD) — assigns speaker labels
+3. **GMM BIC + silhouette refinement** — estimates the number of speakers
+4. **Spectral Clustering** (scikit-learn, BSD) + smoothing — assigns speaker labels
 
 Details: [How It Works](https://foxnosetech.github.io/diarize/how-it-works/)
 
@@ -102,28 +102,26 @@ Evaluated on [VoxConverse](https://github.com/joonson/voxconverse) dev set (216 
 | System | Weighted DER | Notes |
 |--------|----------|-------|
 | pyannote precision-2 | ~8.5% | Commercial license |
-| **diarize** | **~10.8%** | **Apache 2.0, CPU-only, no API key** |
+| **diarize** | **~5.2%** | **Apache 2.0, CPU-only, no API key** |
 | pyannote community-1 | ~11.2% | CC-BY-4.0, needs HF token |
 | pyannote 3.1 (legacy) | ~11.2% | MIT, needs HF token |
 
 ### Speaker Count Estimation
 
-| GT Speakers | Files | Exact Match | Within ±1 |
-|-------------|-------|-------------|-----------|
-| 1 | 22 | 91% | 95% |
-| 2 | 44 | 70% | 91% |
-| 3 | 35 | 69% | 97% |
-| 4 | 24 | 54% | 88% |
-| 5 | 31 | 32% | 87% |
-| 6–7 | 29 | 45% | 79% |
-| 8+ | 31 | 0% | 26% |
-| **Overall** | **216** | **51%** | **81%** |
+| Metric | Result |
+|--------|--------|
+| Files | 216 |
+| Exact match | 117/216 (54%) |
+| Within ±1 | 175/216 (81%) |
+
+Many-speaker files remain the weak spot: automatic count estimation degrades above 7 speakers. Pass `num_speakers` when the count is known.
 
 Full benchmark results, speed comparison, and methodology: [benchmarks](https://foxnosetech.github.io/diarize/benchmarks/).
 
 ## When to use something else
 
-- **You need <9% DER.** pyannote's commercial model (precision-2) achieves ~8.5%. If accuracy is the top priority and you have budget, use that.
+- **You need commercial support or cross-dataset validation.** pyannote's commercial model has published production-oriented benchmarks beyond this single VoxConverse evaluation. If accuracy is the top priority and you have budget, compare on your own data.
+- **You need very stable speaker labels in transcripts.** diarize can still show speaker fragmentation / label switching: one real speaker may be split across multiple `SPEAKER_XX` labels, or the label may briefly jump inside a continuous turn, especially on noisy real-world audio.
 - **Your audio has 8+ speakers.** Automatic speaker count estimation degrades above 7 speakers. You can pass `num_speakers` explicitly, but test carefully.
 - **You need overlapping speech detection.** diarize assigns each segment to one speaker. Overlapping speech is not modeled.
 - **You need GPU-accelerated throughput.** diarize is CPU-only by design. For processing thousands of hours with GPU infrastructure, NeMo or pyannote on GPU will be faster.
