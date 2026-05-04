@@ -15,6 +15,7 @@ Example::
 from __future__ import annotations
 
 import logging
+from collections import Counter
 from pathlib import Path
 from typing import NamedTuple
 
@@ -54,6 +55,50 @@ __all__ = [
 logger = logging.getLogger(__name__)
 
 
+def _majority_label(labels: list[int]) -> int | None:
+    """Return the unique majority label, or ``None`` on ties."""
+    if not labels:
+        return None
+
+    counts = Counter(labels)
+    best_label, best_count = counts.most_common(1)[0]
+    if sum(1 for count in counts.values() if count == best_count) > 1:
+        return None
+    return int(best_label)
+
+
+def _smooth_window_labels(labels: list[int]) -> list[int]:
+    """Apply a 3-window majority filter while preserving ties."""
+    if len(labels) < 3:
+        return labels
+
+    smoothed: list[int] = []
+    for idx, label in enumerate(labels):
+        window = labels[max(0, idx - 1) : min(len(labels), idx + 2)]
+        majority = _majority_label(window)
+        smoothed.append(label if majority is None else majority)
+
+    return smoothed
+
+
+def _window_boundaries(
+    speech_segment: SpeechSegment,
+    segment_subsegments: list[SubSegment],
+) -> list[tuple[float, float]]:
+    """Convert overlapping windows into non-overlapping intervals."""
+    if not segment_subsegments:
+        return []
+
+    centers = [(sub.start + sub.end) / 2 for sub in segment_subsegments]
+    boundaries = [speech_segment.start]
+    for left, right in zip(centers, centers[1:]):
+        midpoint = (left + right) / 2
+        boundaries.append(min(speech_segment.end, max(speech_segment.start, midpoint)))
+    boundaries.append(speech_segment.end)
+
+    return list(zip(boundaries[:-1], boundaries[1:]))
+
+
 def _build_diarization_segments(
     speech_segments: list[SpeechSegment],
     subsegments: list[SubSegment],
@@ -61,8 +106,8 @@ def _build_diarization_segments(
 ) -> list[Segment]:
     """Assemble diarization segments from subsegments and cluster labels.
 
-    Each subsegment (embedding window) gets its speaker label.  Adjacent
-    subsegments from the same speaker are merged.  Short VAD segments
+    Overlapping embedding windows are converted to a non-overlapping
+    timeline and smoothed with a local majority filter. VAD segments
     without embeddings are assigned the nearest speaker.
 
     Args:
@@ -73,16 +118,30 @@ def _build_diarization_segments(
     Returns:
         Merged :class:`Segment` list sorted by start time.
     """
-    # Build raw segments from subsegments + labels
     raw_segments: list[_RawSegment] = []
-    for sub, label in zip(subsegments, labels):
-        raw_segments.append(
-            _RawSegment(
-                start=sub.start,
-                end=sub.end,
-                speaker=f"SPEAKER_{int(label):02d}",
+    subsegments_by_parent: dict[int, list[int]] = {}
+    for idx, sub in enumerate(subsegments):
+        subsegments_by_parent.setdefault(sub.parent_idx, []).append(idx)
+
+    for parent_idx, speech_segment in enumerate(speech_segments):
+        indices = subsegments_by_parent.get(parent_idx)
+        if not indices:
+            continue
+
+        indices.sort(key=lambda idx: subsegments[idx].start)
+        parent_labels = _smooth_window_labels([int(labels[idx]) for idx in indices])
+        parent_subsegments = [subsegments[idx] for idx in indices]
+        windows = _window_boundaries(speech_segment, parent_subsegments)
+        for (start, end), label in zip(windows, parent_labels):
+            if end <= start:
+                continue
+            raw_segments.append(
+                _RawSegment(
+                    start=start,
+                    end=end,
+                    speaker=f"SPEAKER_{label:02d}",
+                )
             )
-        )
 
     # Add short VAD segments that were skipped during embedding extraction
     covered_indices = {sub.parent_idx for sub in subsegments}
@@ -93,12 +152,12 @@ def _build_diarization_segments(
         seg_mid = (seg.start + seg.end) / 2
         best_speaker = "SPEAKER_00"
         best_dist = float("inf")
-        for sub, label in zip(subsegments, labels):
-            sub_mid = (sub.start + sub.end) / 2
-            dist = abs(seg_mid - sub_mid)
+        for raw in raw_segments:
+            raw_mid = (raw.start + raw.end) / 2
+            dist = abs(seg_mid - raw_mid)
             if dist < best_dist:
                 best_dist = dist
-                best_speaker = f"SPEAKER_{int(label):02d}"
+                best_speaker = raw.speaker
         raw_segments.append(_RawSegment(start=seg.start, end=seg.end, speaker=best_speaker))
 
     # Sort by time
@@ -195,7 +254,11 @@ def diarize(
     )
 
     # 4. Build result
-    segments = _build_diarization_segments(speech_segments, subsegments, labels)
+    segments = _build_diarization_segments(
+        speech_segments,
+        subsegments,
+        labels,
+    )
 
     result = DiarizeResult(
         segments=segments,

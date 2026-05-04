@@ -472,6 +472,25 @@ class TestSingleSpeakerPrecheck:
 class TestClusterSpectral:
     """Tests for Spectral Clustering."""
 
+    def test_spherical_refinement_corrects_noisy_labels(self):
+        from diarize.clustering import _refine_labels_spherical
+
+        embeddings = np.array(
+            [
+                [1.0, 0.0],
+                [0.9, 0.1],
+                [0.0, 1.0],
+                [0.1, 0.9],
+            ]
+        )
+        noisy_labels = np.array([0, 0, 0, 1])
+
+        labels = _refine_labels_spherical(embeddings, noisy_labels)
+        assert len(set(labels)) == 2
+        assert labels[0] == labels[1]
+        assert labels[2] == labels[3]
+        assert labels[0] != labels[2]
+
     def test_basic_clustering(self):
         from diarize.clustering import cluster_spectral
 
@@ -492,6 +511,49 @@ class TestClusterSpectral:
 
 class TestClusterSpeakers:
     """Tests for the high-level cluster_speakers wrapper."""
+
+    def test_silhouette_candidates_cover_bic_neighbourhood(self):
+        from diarize.clustering import _silhouette_candidate_counts
+
+        assert _silhouette_candidate_counts(
+            k=5,
+            n_embeddings=20,
+            min_speakers=1,
+            max_speakers=10,
+        ) == [
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+        ]
+
+    def test_silhouette_candidates_skip_single_speaker(self):
+        from diarize.clustering import _silhouette_candidate_counts
+
+        assert _silhouette_candidate_counts(
+            k=1,
+            n_embeddings=20,
+            min_speakers=1,
+            max_speakers=10,
+        ) == []
+        assert _silhouette_candidate_counts(
+            k=3,
+            n_embeddings=3,
+            min_speakers=1,
+            max_speakers=10,
+        ) == []
+
+    def test_silhouette_candidates_respect_min_speakers(self):
+        from diarize.clustering import _silhouette_candidate_counts
+
+        assert _silhouette_candidate_counts(
+            k=5,
+            n_embeddings=20,
+            min_speakers=4,
+            max_speakers=10,
+        ) == [4, 5, 6, 7, 8]
 
     def test_fixed_num_speakers(self):
         from diarize.clustering import cluster_speakers
@@ -581,6 +643,23 @@ class TestBuildDiarizationSegments:
         assert segments[0].speaker == "SPEAKER_00"
         assert segments[1].speaker == "SPEAKER_01"
 
+    def test_long_segment_windows_become_non_overlapping(self):
+        from diarize import _build_diarization_segments
+        from diarize.utils import SpeechSegment, SubSegment
+
+        speech = [SpeechSegment(start=0.0, end=8.0)]
+        subs = [
+            SubSegment(start=0.0, end=1.2, parent_idx=0),
+            SubSegment(start=0.6, end=1.8, parent_idx=0),
+            SubSegment(start=1.2, end=2.4, parent_idx=0),
+            SubSegment(start=1.8, end=3.0, parent_idx=0),
+        ]
+        labels = np.array([0, 1, 0, 1])
+
+        segments = _build_diarization_segments(speech, subs, labels)
+        assert len(segments) >= 2
+        assert all(a.end <= b.start for a, b in zip(segments, segments[1:]))
+
     def test_short_segment_assigned_nearest_speaker(self):
         """VAD segments without embeddings should get the nearest speaker."""
         from diarize import _build_diarization_segments
@@ -598,10 +677,10 @@ class TestBuildDiarizationSegments:
         labels = np.array([0, 1])
 
         segments = _build_diarization_segments(speech, subs, labels)
-        # The short segment at 2.5-2.8 should be assigned SPEAKER_00 (nearest)
-        short_seg = [s for s in segments if s.start == pytest.approx(2.5)]
-        assert len(short_seg) == 1
-        assert short_seg[0].speaker == "SPEAKER_00"
+        # The short segment at 2.5-2.8 should inherit SPEAKER_00 from the nearest speech.
+        covering = [s for s in segments if s.start <= 2.5 and s.end >= 2.8]
+        assert len(covering) == 1
+        assert covering[0].speaker == "SPEAKER_00"
 
     def test_no_speech_segments(self):
         """No speech and no subsegments returns empty."""

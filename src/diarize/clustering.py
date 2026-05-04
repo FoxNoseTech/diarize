@@ -173,10 +173,61 @@ def estimate_speakers(
 # ── Spectral Clustering ──────────────────────────────────────────────────────
 
 
+def _refine_labels_spherical(
+    embeddings: np.ndarray,
+    labels: np.ndarray,
+    *,
+    max_iter: int = 8,
+) -> np.ndarray:
+    """Refine cluster labels with spherical centroid reassignment."""
+    n = len(embeddings)
+    if n == 0:
+        return labels
+
+    unique_labels = sorted({int(label) for label in labels})
+    k = len(unique_labels)
+    if k <= 1:
+        return np.zeros(n, dtype=int)
+
+    label_map = {label: idx for idx, label in enumerate(unique_labels)}
+    refined = np.array([label_map[int(label)] for label in labels], dtype=int)
+    emb = normalize(embeddings, norm="l2")
+
+    for _ in range(max_iter):
+        centroids = np.zeros((k, emb.shape[1]), dtype=float)
+        valid = np.zeros(k, dtype=bool)
+        for label in range(k):
+            members = emb[refined == label]
+            if len(members) == 0:
+                continue
+            centroid = members.mean(axis=0)
+            norm = float(np.linalg.norm(centroid))
+            if norm == 0:
+                continue
+            centroids[label] = centroid / norm
+            valid[label] = True
+
+        if not np.all(valid):
+            break
+
+        scores = emb @ centroids.T
+        updated = np.argmax(scores, axis=1)
+        if len(set(updated)) < k:
+            break
+        if np.array_equal(updated, refined):
+            break
+        refined = updated
+
+    return refined
+
+
 def cluster_spectral(embeddings: np.ndarray, k: int) -> np.ndarray:
     """Cluster embeddings into *k* speakers using Spectral Clustering.
 
     Uses cosine similarity as the affinity metric, rescaled to [0, 1].
+    The spectral assignment is then refined with a few spherical
+    centroid-reassignment iterations, which reduces noisy window labels
+    while preserving the selected number of speakers.
 
     Args:
         embeddings: Speaker embeddings of shape ``(N, D)``.
@@ -212,11 +263,29 @@ def cluster_spectral(embeddings: np.ndarray, k: int) -> np.ndarray:
         n_init=10,
     )
     labels: np.ndarray = sc.fit_predict(affinity)
+    labels = _refine_labels_spherical(embeddings, labels)
     logger.debug("Spectral clustering: %d clusters", k)
     return labels
 
 
 # ── High-level wrappers ──────────────────────────────────────────────────────
+
+
+def _silhouette_candidate_counts(
+    k: int,
+    n_embeddings: int,
+    min_speakers: int,
+    max_speakers: int,
+) -> list[int]:
+    """Return valid speaker counts for silhouette refinement."""
+    if k < 2 or n_embeddings < 4:
+        return []
+
+    lower = max(2, min_speakers, k - 2)
+    upper = min(max_speakers, n_embeddings - 1, k + 3)
+    if upper < lower:
+        return []
+    return list(range(lower, upper + 1))
 
 
 def cluster_auto(
@@ -242,10 +311,10 @@ def cluster_auto(
     k, details = estimate_speakers(embeddings, min_speakers, max_speakers)
     n = len(embeddings)
 
-    # Silhouette refinement: BIC tends to undercount speakers.
-    # Try k, k+1, k+2 and pick the k with the best silhouette score.
-    if k >= 2 and n >= 4:
-        candidates = [c for c in range(k, k + 3) if c <= min(max_speakers, n - 1)]
+    # Silhouette refinement: use BIC as an anchor, then score a small
+    # neighbourhood around it. This catches both undercounts and overcounts.
+    if k >= 2:
+        candidates = _silhouette_candidate_counts(k, n, min_speakers, max_speakers)
         if len(candidates) > 1:
             distance = np.maximum(1 - (cosine_similarity(embeddings) + 1) / 2, 0)
             best_k, best_labels, best_sil = k, None, -1.0
