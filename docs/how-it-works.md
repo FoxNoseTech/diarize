@@ -18,7 +18,7 @@ Audio File
 [3] GMM BIC + silhouette -> Estimated speaker count (k)
     |
     v
-[4] Spectral + smoothing -> Speaker timeline
+[4] Spectral + temporal smoothing -> Speaker timeline
     |
     v
 DiarizeResult
@@ -97,11 +97,14 @@ scikit-learn's `SpectralClustering`.
 
 The initial spectral labels are refined with spherical centroid
 reassignment over L2-normalised embeddings. This preserves the selected
-speaker count while reducing unstable one-window label flips.
+speaker count while reducing unstable label assignments.
 
 For long VAD segments, overlapping embedding windows are decoded into
-non-overlapping timeline intervals using window-center midpoints. A
-3-window majority filter smooths local label noise. Adjacent intervals
+non-overlapping timeline intervals using window-center midpoints. Within
+each VAD segment, centroid-scored Viterbi decoding applies a speaker
+switch penalty to remove short label flicker. Sustained original label
+runs are restored before final island cleanup, so the smoother targets
+brief A-B-A fragments rather than real speaker turns. Adjacent intervals
 assigned to the same speaker are merged, and short segments that were
 skipped during embedding extraction are assigned the label of the nearest
 speaker.

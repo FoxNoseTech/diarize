@@ -660,6 +660,29 @@ class TestBuildDiarizationSegments:
         assert _smooth_window_labels([0, 1]) == [0, 1]
         assert _smooth_window_labels([0, 1, 1]) == [0, 1, 1]
 
+    def test_temporal_helper_edge_cases(self):
+        from diarize import (
+            _collapse_short_label_islands,
+            _restore_sustained_label_runs,
+            _speaker_centroids,
+            _viterbi_smooth_scores,
+        )
+
+        labels, centroids = _speaker_centroids(np.ones((2, 2)), np.array([0]))
+        assert labels == []
+        assert centroids.size == 0
+
+        labels, centroids = _speaker_centroids(np.zeros((2, 2)), np.array([0, 0]))
+        assert labels == []
+        assert centroids.shape == (0, 2)
+
+        assert _viterbi_smooth_scores(np.empty((0, 2))) == []
+        assert _viterbi_smooth_scores(np.ones((3, 1))) == [0, 0, 0]
+
+        windows = [(0.0, 0.6), (0.6, 1.2), (1.2, 1.8)]
+        assert _collapse_short_label_islands([0, 1, 0], windows) == [0, 0, 0]
+        assert _restore_sustained_label_runs([0], [1], []) == [1]
+
     def test_window_boundaries_empty_and_degenerate_windows(self):
         from diarize import _build_diarization_segments, _window_boundaries
         from diarize.utils import SpeechSegment, SubSegment
@@ -750,6 +773,96 @@ class TestBuildDiarizationSegments:
         segments = _build_diarization_segments(speech, subs, labels)
         assert len(segments) >= 2
         assert all(a.end <= b.start for a, b in zip(segments, segments[1:]))
+
+    def test_temporal_smoothing_collapses_single_turn_label_switches(self):
+        from diarize import _build_diarization_segments
+        from diarize.utils import SpeechSegment, SubSegment
+
+        speech = [SpeechSegment(start=0.0, end=4.2)]
+        subs = [
+            SubSegment(start=0.0, end=1.2, parent_idx=0),
+            SubSegment(start=0.6, end=1.8, parent_idx=0),
+            SubSegment(start=1.2, end=2.4, parent_idx=0),
+            SubSegment(start=1.8, end=3.0, parent_idx=0),
+            SubSegment(start=2.4, end=3.6, parent_idx=0),
+        ]
+        labels = np.array([0, 1, 0, 1, 0])
+        embeddings = np.array(
+            [
+                [1.00, 0.00],
+                [0.99, 0.01],
+                [1.00, 0.02],
+                [0.98, 0.01],
+                [1.00, 0.00],
+            ]
+        )
+
+        segments = _build_diarization_segments(speech, subs, labels, embeddings)
+
+        assert len(segments) == 1
+        assert segments[0].speaker == "SPEAKER_00"
+
+    def test_temporal_smoothing_preserves_sustained_speaker_change(self):
+        from diarize import _build_diarization_segments
+        from diarize.utils import SpeechSegment, SubSegment
+
+        speech = [SpeechSegment(start=0.0, end=4.2)]
+        subs = [
+            SubSegment(start=0.0, end=1.2, parent_idx=0),
+            SubSegment(start=0.6, end=1.8, parent_idx=0),
+            SubSegment(start=1.2, end=2.4, parent_idx=0),
+            SubSegment(start=1.8, end=3.0, parent_idx=0),
+            SubSegment(start=2.4, end=3.6, parent_idx=0),
+        ]
+        labels = np.array([0, 0, 1, 1, 1])
+        embeddings = np.array(
+            [
+                [1.00, 0.00],
+                [0.98, 0.02],
+                [0.00, 1.00],
+                [0.01, 0.99],
+                [0.00, 1.00],
+            ]
+        )
+
+        segments = _build_diarization_segments(speech, subs, labels, embeddings)
+
+        assert [segment.speaker for segment in segments] == ["SPEAKER_00", "SPEAKER_01"]
+
+    def test_temporal_smoothing_keeps_sustained_interior_run(self):
+        from diarize import _build_diarization_segments
+        from diarize.utils import SpeechSegment, SubSegment
+
+        speech = [SpeechSegment(start=0.0, end=5.4)]
+        subs = [
+            SubSegment(start=0.0, end=1.2, parent_idx=0),
+            SubSegment(start=0.6, end=1.8, parent_idx=0),
+            SubSegment(start=1.2, end=2.4, parent_idx=0),
+            SubSegment(start=1.8, end=3.0, parent_idx=0),
+            SubSegment(start=2.4, end=3.6, parent_idx=0),
+            SubSegment(start=3.0, end=4.2, parent_idx=0),
+            SubSegment(start=3.6, end=4.8, parent_idx=0),
+        ]
+        labels = np.array([1, 1, 0, 0, 0, 1, 1])
+        embeddings = np.array(
+            [
+                [1.00, 0.00],
+                [0.99, 0.01],
+                [0.98, 0.02],
+                [0.99, 0.01],
+                [1.00, 0.00],
+                [0.99, 0.01],
+                [1.00, 0.00],
+            ]
+        )
+
+        segments = _build_diarization_segments(speech, subs, labels, embeddings)
+
+        assert [segment.speaker for segment in segments] == [
+            "SPEAKER_01",
+            "SPEAKER_00",
+            "SPEAKER_01",
+        ]
 
     def test_short_segment_assigned_nearest_speaker(self):
         """VAD segments without embeddings should get the nearest speaker."""

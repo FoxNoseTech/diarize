@@ -23,7 +23,7 @@ DER is the standard metric for speaker diarization, computed with
 | System | Weighted DER | Median DER | Notes |
 |--------|----------|------------|-------|
 | pyannote precision-2 | ~8.5% | -- | Commercial license |
-| **diarize** | **~5.2%** | **~2.4%** | **Apache 2.0, CPU-only, no API key** |
+| **diarize** | **~5.0%** | **~2.2%** | **Apache 2.0, CPU-only, no API key** |
 | pyannote community-1 | ~11.2% | -- | CC-BY-4.0, needs HF token |
 | pyannote 3.1 (legacy) | ~11.2% | -- | MIT, needs HF token |
 
@@ -94,10 +94,10 @@ Measured on VoxConverse dev files on Apple M2 Pro / M2 Max
 
 - **Many speakers (8+):** Automatic speaker count estimation degrades.
   Use ``num_speakers`` when the speaker count is known.
-- **Speaker label switching / fragmentation:** On noisy real-world audio,
-  one actual speaker can be split across multiple ``SPEAKER_XX`` labels,
-  or the label can briefly jump inside a continuous turn. This is mostly
-  a clustering and embedding-assignment limitation, and it is visible in
+- **Speaker label switching / fragmentation:** Temporal smoothing reduces
+  short label jumps, but on noisy real-world audio one actual speaker can
+  still be split across multiple ``SPEAKER_XX`` labels. This is mostly a
+  clustering and embedding-assignment limitation, and it is visible in
   transcripts even when aggregate DER looks acceptable.
 - **Overlapping speech:** DER is computed with ``skip_overlap=True``.
   The pipeline does not model overlapping speech --- when two people
