@@ -29,12 +29,13 @@ for seg in result.segments:
 | GPU required | No | No (7x slower on CPU) | No |
 | HuggingFace account | No | Yes | Yes |
 | Auto speaker count | Yes | Yes | Yes |
-| DER (VoxConverse) | **~10.8%** | ~11.2% | ~8.5% |
+| DER (VoxConverse dev) | **~5.2%** | ~11.2% | ~8.5% |
 | CPU speed (RTF) | **0.12** | 0.86 | --- |
 
 DER and speed numbers for pyannote are from their
 [benchmark page](https://huggingface.co/pyannote/speaker-diarization-3.1).
-Full methodology: [Benchmarks](benchmarks.md).
+The diarize number is from the VoxConverse dev evaluation described in
+[Benchmarks](benchmarks.md).
 
 ## Next Steps
 

@@ -5,19 +5,14 @@ dev set (216 files, 1--20 speakers per file).
 
 ## Speaker Count Estimation
 
-| GT Speakers | Files | Exact Match | Within +/-1 |
-|-------------|-------|-------------|-------------|
-| 1 | 22 | 91% | 95% |
-| 2 | 44 | 70% | 91% |
-| 3 | 35 | 69% | 97% |
-| 4 | 24 | 54% | 88% |
-| 5 | 31 | 32% | 87% |
-| 6--7 | 29 | 45% | 79% |
-| 8+ | 31 | 0% | 26% |
-| **Overall** | **216** | **51%** | **81%** |
+| Metric | Result |
+|--------|--------|
+| Files | 216 |
+| Exact match | 117/216 (54%) |
+| Within +/-1 | 175/216 (81%) |
 
-The algorithm works best for 1--4 speakers (88--97% within +/-1).
-Accuracy drops for 8 or more speakers --- see
+The automatic estimator is usually close, but exact counting remains the
+main weak spot. Accuracy drops for many-speaker files --- see
 [Limitations](#limitations) below.
 
 ## Diarization Error Rate (DER)
@@ -28,7 +23,7 @@ DER is the standard metric for speaker diarization, computed with
 | System | Weighted DER | Median DER | Notes |
 |--------|----------|------------|-------|
 | pyannote precision-2 | ~8.5% | -- | Commercial license |
-| **diarize** | **~10.8%** | **~3.7%** | **Apache 2.0, CPU-only, no API key** |
+| **diarize** | **~5.2%** | **~2.4%** | **Apache 2.0, CPU-only, no API key** |
 | pyannote community-1 | ~11.2% | -- | CC-BY-4.0, needs HF token |
 | pyannote 3.1 (legacy) | ~11.2% | -- | MIT, needs HF token |
 
@@ -36,10 +31,12 @@ pyannote DER numbers are self-reported from the
 [pyannote benchmark page](https://huggingface.co/pyannote/speaker-diarization-3.1)
 on VoxConverse v0.3.
 
-!!! note "Better than pyannote 3.1 on VoxConverse"
-    `diarize` achieves lower DER than both pyannote 3.1 (legacy) and
-    community-1 on VoxConverse, while requiring no HuggingFace token
-    or account registration.
+!!! note "VoxConverse-only result"
+    On this VoxConverse dev evaluation, `diarize` reports lower weighted
+    DER than the published pyannote VoxConverse figures, while requiring
+    no HuggingFace token or account registration. Treat this as a
+    single-dataset benchmark and compare on your own audio when accuracy
+    is the top priority.
 
 ## CPU Speed (Real Time Factor)
 
@@ -82,9 +79,10 @@ Measured on VoxConverse dev files on Apple M2 Pro / M2 Max
 ## Limitations
 
 !!! warning "Speaker count > 7"
-    The GMM BIC speaker-count estimator with silhouette refinement works
-    well for **1--5 speakers** and degrades gradually for 6--7.  For
-    **8 or more speakers** it tends to undercount and produces higher DER.
+    The GMM BIC speaker-count estimator with silhouette refinement is
+    usually close on VoxConverse dev, but many-speaker files remain the
+    hardest case. For **8 or more speakers** it can undercount and
+    produce higher DER.
     If you know your audio has many speakers, pass ``num_speakers``
     explicitly:
 
@@ -94,9 +92,13 @@ Measured on VoxConverse dev files on Apple M2 Pro / M2 Max
 
 **Known limitations:**
 
-- **Many speakers (8+):** Automatic speaker count estimation degrades ---
-  GMM BIC with silhouette refinement reaches 26% within-one accuracy
-  for 8+ speakers.  Use ``num_speakers`` when the speaker count is known.
+- **Many speakers (8+):** Automatic speaker count estimation degrades.
+  Use ``num_speakers`` when the speaker count is known.
+- **Speaker label switching / fragmentation:** On noisy real-world audio,
+  one actual speaker can be split across multiple ``SPEAKER_XX`` labels,
+  or the label can briefly jump inside a continuous turn. This is mostly
+  a clustering and embedding-assignment limitation, and it is visible in
+  transcripts even when aggregate DER looks acceptable.
 - **Overlapping speech:** DER is computed with ``skip_overlap=True``.
   The pipeline does not model overlapping speech --- when two people
   talk simultaneously, only one is labelled.
