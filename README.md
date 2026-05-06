@@ -23,9 +23,9 @@ for seg in result.segments:
     print(f"  [{seg.start:.1f}s - {seg.end:.1f}s] {seg.speaker}")
 ```
 
-**~5.0% weighted DER** on VoxConverse dev. Processes audio **~8x faster than real-time** on CPU. Automatically detects the number of speakers.
+**~4.8% weighted DER** on VoxConverse dev. Processes audio **~8x faster than real-time** on CPU. Automatically detects the number of speakers.
 
-> Benchmarked on a single dataset ([VoxConverse](https://github.com/joonson/voxconverse)). Cross-dataset validation is [in progress](#roadmap).
+> Primary benchmark: [VoxConverse](https://github.com/joonson/voxconverse). Preliminary AMI meeting-domain validation is [in progress](#roadmap).
 
 ## How diarize compares
 
@@ -35,7 +35,7 @@ for seg in result.segments:
 | GPU required | No | No (7x slower on CPU) | No |
 | HuggingFace account | No | Yes | Yes |
 | Auto speaker count | Yes | Yes | Yes |
-| DER (VoxConverse dev) | **~5.0%** | ~11.2% | ~8.5% |
+| DER (VoxConverse dev) | **~4.8%** | ~11.2% | ~8.5% |
 | CPU speed (RTF) | **0.12** | 0.86 | — |
 | Install | `pip install diarize` | `pip install pyannote.audio` | `pip install pyannote.audio` |
 
@@ -102,7 +102,7 @@ Evaluated on [VoxConverse](https://github.com/joonson/voxconverse) dev set (216 
 | System | Weighted DER | Notes |
 |--------|----------|-------|
 | pyannote precision-2 | ~8.5% | Commercial license |
-| **diarize** | **~5.0%** | **Apache 2.0, CPU-only, no API key** |
+| **diarize** | **~4.8%** | **Apache 2.0, CPU-only, no API key** |
 | pyannote community-1 | ~11.2% | CC-BY-4.0, needs HF token |
 | pyannote 3.1 (legacy) | ~11.2% | MIT, needs HF token |
 
@@ -111,16 +111,26 @@ Evaluated on [VoxConverse](https://github.com/joonson/voxconverse) dev set (216 
 | Metric | Result |
 |--------|--------|
 | Files | 216 |
-| Exact match | 117/216 (54%) |
-| Within ±1 | 175/216 (81%) |
+| Exact match | 125/216 (58%) |
+| Within ±1 | 178/216 (82%) |
 
 Many-speaker files remain the weak spot: automatic count estimation degrades above 7 speakers. Pass `num_speakers` when the count is known.
+
+Preliminary AMI meeting-domain check (16 Mix-Headset test files, 4–9 speakers):
+
+| Metric | Result |
+|--------|--------|
+| Weighted DER | 14.96% |
+| Speaker count exact match | 4/16 (25%) |
+| Speaker count within ±1 | 8/16 (50%) |
+
+AMI confirms that meeting-domain speaker counting is harder: the estimator often collapses 6+ speaker meetings to 4–5 speakers.
 
 Full benchmark results, speed comparison, and methodology: [benchmarks](https://foxnosetech.github.io/diarize/benchmarks/).
 
 ## When to use something else
 
-- **You need commercial support or cross-dataset validation.** pyannote's commercial model has published production-oriented benchmarks beyond this single VoxConverse evaluation. If accuracy is the top priority and you have budget, compare on your own data.
+- **You need commercial support or broad cross-dataset validation.** pyannote's commercial model has published production-oriented benchmarks beyond this limited VoxConverse/AMI evaluation. If accuracy is the top priority and you have budget, compare on your own data.
 - **You need very stable speaker labels in transcripts.** Temporal smoothing reduces short label jumps, but diarize can still show speaker fragmentation / label switching: one real speaker may be split across multiple `SPEAKER_XX` labels, especially on noisy real-world audio.
 - **Your audio has 8+ speakers.** Automatic speaker count estimation degrades above 7 speakers. You can pass `num_speakers` explicitly, but test carefully.
 - **You need overlapping speech detection.** diarize assigns each segment to one speaker. Overlapping speech is not modeled.
@@ -128,9 +138,9 @@ Full benchmark results, speed comparison, and methodology: [benchmarks](https://
 
 ## Roadmap
 
-Current benchmarks are based on VoxConverse dev set only. We are actively working on:
+Current benchmarks include VoxConverse dev and preliminary AMI test validation. We are actively working on:
 
-- **Cross-dataset validation** — AMI, DIHARD III, CALLHOME, and other standard benchmarks in isolated environments
+- **Cross-dataset validation** — DIHARD III, CALLHOME, and other standard benchmarks in isolated environments
 - **Speaker count estimation benchmarks** — comparison of speaker counting accuracy against other systems
 - **Broader system comparison** — NeMo, WhisperX, and other diarization solutions
 - **Streaming / real-time diarization** — live audio streams with real-time speaker detection

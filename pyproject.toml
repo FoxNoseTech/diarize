@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "diarize"
-version = "0.1.1"
+version = "0.1.2"
 description = "Speaker diarization for Python — detect who spoke when in audio files. CPU-only, no GPU, no API keys, no account signup. Automatic speaker count detection."
 readme = "README.md"
 license = "Apache-2.0"
