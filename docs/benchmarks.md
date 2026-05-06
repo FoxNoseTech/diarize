@@ -1,15 +1,17 @@
 # Benchmarks
 
-Evaluated on the [VoxConverse](https://github.com/joonson/voxconverse)
-dev set (216 files, 1--20 speakers per file).
+Primary published numbers are evaluated on the
+[VoxConverse](https://github.com/joonson/voxconverse) dev set
+(216 files, 1--20 speakers per file). We also run preliminary
+cross-dataset checks on AMI meetings to track generalisation.
 
 ## Speaker Count Estimation
 
 | Metric | Result |
 |--------|--------|
 | Files | 216 |
-| Exact match | 117/216 (54%) |
-| Within +/-1 | 175/216 (81%) |
+| Exact match | 125/216 (58%) |
+| Within +/-1 | 178/216 (82%) |
 
 The automatic estimator is usually close, but exact counting remains the
 main weak spot. Accuracy drops for many-speaker files --- see
@@ -23,7 +25,7 @@ DER is the standard metric for speaker diarization, computed with
 | System | Weighted DER | Median DER | Notes |
 |--------|----------|------------|-------|
 | pyannote precision-2 | ~8.5% | -- | Commercial license |
-| **diarize** | **~5.0%** | **~2.2%** | **Apache 2.0, CPU-only, no API key** |
+| **diarize** | **~4.8%** | **~2.1%** | **Apache 2.0, CPU-only, no API key** |
 | pyannote community-1 | ~11.2% | -- | CC-BY-4.0, needs HF token |
 | pyannote 3.1 (legacy) | ~11.2% | -- | MIT, needs HF token |
 
@@ -31,12 +33,33 @@ pyannote DER numbers are self-reported from the
 [pyannote benchmark page](https://huggingface.co/pyannote/speaker-diarization-3.1)
 on VoxConverse v0.3.
 
-!!! note "VoxConverse-only result"
+!!! note "Dataset-specific result"
     On this VoxConverse dev evaluation, `diarize` reports lower weighted
     DER than the published pyannote VoxConverse figures, while requiring
     no HuggingFace token or account registration. Treat this as a
-    single-dataset benchmark and compare on your own audio when accuracy
+    VoxConverse-specific benchmark and compare on your own audio when accuracy
     is the top priority.
+
+## Cross-Dataset Check: AMI
+
+Preliminary AMI test-set evaluation uses 16 Mix-Headset meeting
+recordings (4--9 speakers per file), RTTM annotations from the
+standard AMI speaker-diarization benchmark, and the same DER settings
+(``collar=0.25``, ``skip_overlap=True``).
+
+| Metric | Result |
+|--------|--------|
+| Files | 16 |
+| Weighted DER | 14.96% |
+| Mean DER | 14.63% |
+| Median DER | 14.18% |
+| Speaker count exact match | 4/16 (25%) |
+| Speaker count within +/-1 | 8/16 (50%) |
+
+This confirms that meeting-domain audio is a harder case for automatic
+speaker counting. The estimator often collapses 6+ speaker meetings to
+4--5 speakers, even when aggregate DER remains moderate because some
+ground-truth speakers have little speaking time.
 
 ## CPU Speed (Real Time Factor)
 
@@ -76,6 +99,34 @@ Measured on VoxConverse dev files on Apple M2 Pro / M2 Max
   warm-up.  RTF = processing_time / audio_duration.
 - **Hardware:** Apple M2 Pro, macOS, CPU only (no GPU).
 
+## Reproducing and Extending Benchmarks
+
+The repository includes a dataset-agnostic RTTM runner for local
+experiments:
+
+```bash
+python scripts/benchmark_rttm.py \
+  --dataset voxconverse-dev \
+  --audio-dir /path/to/voxconverse/dev/audio \
+  --rttm-dir /path/to/voxconverse/rttm_annotations/dev \
+  --output results_voxconverse_dev.json
+```
+
+It also supports combined RTTM files and targeted diagnostics:
+
+```bash
+python scripts/benchmark_rttm.py \
+  --dataset ami-test \
+  --audio-dir /path/to/ami/mix-headset/test \
+  --rttm-file /path/to/AMI.SpeakerDiarization.Benchmark.test.rttm \
+  --oracle-speakers \
+  --file-id IS1009a
+```
+
+Use ``--oracle-speakers`` to isolate speaker assignment and clustering
+quality when the true speaker count is known. Use ``--list-only`` to
+verify audio/RTTM matching without running inference.
+
 ## Limitations
 
 !!! warning "Speaker count > 7"
@@ -108,14 +159,14 @@ Measured on VoxConverse dev files on Apple M2 Pro / M2 Max
 
 ## Future Work
 
-!!! info "Single-dataset disclaimer"
-    All results above are from VoxConverse dev set only.  We are actively
-    expanding evaluation to ensure the algorithm generalises well and is
-    not overfit to a single benchmark.
+!!! info "Cross-dataset validation in progress"
+    VoxConverse remains the primary published benchmark. AMI is now used
+    as an additional meeting-domain check, and more datasets are needed
+    before making broad accuracy claims.
 
 **Planned evaluation:**
 
-- **Cross-dataset validation** --- AMI, DIHARD III, CALLHOME, and other
+- **Cross-dataset validation** --- DIHARD III, CALLHOME, and other
   standard benchmarks, run in isolated environments with controlled
   CPU/memory limits.
 - **Speaker count estimation comparison** --- dedicated benchmarks comparing

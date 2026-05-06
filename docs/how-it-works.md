@@ -76,9 +76,10 @@ speakers while keeping computational cost low.
 
 **Step 3 --- Silhouette refinement.** BIC is used as an anchor, then a
 small neighbourhood around it is scored with silhouette over cosine
-distance. The candidate range is clamped by `min_speakers`,
-`max_speakers`, and the number of available embeddings. This catches
-some BIC undercounts and overcounts without searching the full range.
+distance plus a small logarithmic bonus for larger *k*. The candidate
+range is clamped by `min_speakers`, `max_speakers`, and the number of
+available embeddings. This catches some BIC undercounts and overcounts
+without searching the full range.
 
 !!! warning
     For **8 or more speakers** the estimator can undercount.

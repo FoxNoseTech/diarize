@@ -29,7 +29,7 @@ for seg in result.segments:
 | GPU required | No | No (7x slower on CPU) | No |
 | HuggingFace account | No | Yes | Yes |
 | Auto speaker count | Yes | Yes | Yes |
-| DER (VoxConverse dev) | **~5.0%** | ~11.2% | ~8.5% |
+| DER (VoxConverse dev) | **~4.8%** | ~11.2% | ~8.5% |
 | CPU speed (RTF) | **0.12** | 0.86 | --- |
 
 DER and speed numbers for pyannote are from their
@@ -40,7 +40,7 @@ The diarize number is from the VoxConverse dev evaluation described in
 ## Next Steps
 
 - [How It Works](how-it-works.md) --- pipeline architecture and algorithms
-- [Benchmarks](benchmarks.md) --- VoxConverse evaluation, speed comparison, limitations
+- [Benchmarks](benchmarks.md) --- VoxConverse, AMI, speed comparison, limitations
 - [API Reference](api.md) --- full auto-generated API documentation
 
 ## License

@@ -597,6 +597,12 @@ class TestClusterSpeakers:
             max_speakers=10,
         ) == [4, 5, 6, 7, 8]
 
+    def test_speaker_count_score_applies_small_k_bonus(self):
+        from diarize.clustering import _speaker_count_score
+
+        assert _speaker_count_score(0.50, 4) > _speaker_count_score(0.50, 2)
+        assert _speaker_count_score(0.50, 2) > _speaker_count_score(0.44, 4)
+
     def test_auto_updates_details_when_silhouette_changes_k(self):
         from diarize.clustering import cluster_auto
         from diarize.utils import SpeakerEstimationDetails
@@ -1262,7 +1268,7 @@ class TestImports:
     def test_version(self):
         from diarize import __version__
 
-        assert __version__ == "0.1.0"
+        assert __version__ == "0.1.2"
 
     def test_import_pydantic_models(self):
         from diarize.utils import (

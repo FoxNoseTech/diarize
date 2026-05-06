@@ -28,6 +28,8 @@ from .utils import SpeakerEstimationDetails
 
 logger = logging.getLogger(__name__)
 
+_SILHOUETTE_K_BONUS = 0.04
+
 __all__ = [
     "estimate_speakers",
     "cluster_spectral",
@@ -288,6 +290,16 @@ def _silhouette_candidate_counts(
     return list(range(lower, upper + 1))
 
 
+def _speaker_count_score(silhouette: float, k: int) -> float:
+    """Score speaker-count candidates from silhouette plus a small k prior.
+
+    Raw silhouette tends to prefer fewer, broader clusters on noisy
+    speaker embeddings. The logarithmic k bonus counteracts that bias
+    without overwhelming the separation score.
+    """
+    return silhouette + _SILHOUETTE_K_BONUS * np.log(max(k, 1))
+
+
 def cluster_auto(
     embeddings: np.ndarray,
     min_speakers: int = 1,
@@ -317,19 +329,25 @@ def cluster_auto(
         candidates = _silhouette_candidate_counts(k, n, min_speakers, max_speakers)
         if len(candidates) > 1:
             distance = np.maximum(1 - (cosine_similarity(embeddings) + 1) / 2, 0)
-            best_k, best_labels, best_sil = k, None, -1.0
+            best_k, best_labels, best_score = k, None, -1.0
             for c in candidates:
                 labels_c = cluster_spectral(embeddings, c)
                 sil = silhouette_score(distance, labels_c, metric="precomputed")
-                logger.debug("Silhouette refinement: k=%d  sil=%.4f", c, sil)
-                if sil > best_sil:
-                    best_k, best_labels, best_sil = c, labels_c, sil
+                score = _speaker_count_score(sil, c)
+                logger.debug(
+                    "Silhouette refinement: k=%d  sil=%.4f  score=%.4f",
+                    c,
+                    sil,
+                    score,
+                )
+                if score > best_score:
+                    best_k, best_labels, best_score = c, labels_c, score
             if best_k != k:
                 logger.info(
-                    "Silhouette refinement: BIC k=%d -> k=%d (sil=%.4f)",
+                    "Silhouette refinement: BIC k=%d -> k=%d (score=%.4f)",
                     k,
                     best_k,
-                    best_sil,
+                    best_score,
                 )
                 details.best_k = best_k
             return best_labels, details  # type: ignore[return-value]
